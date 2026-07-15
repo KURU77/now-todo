@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>今！やることリスト</title>
+<meta name="description" content="締切までにやりたいことを登録して、空いた時間と気分から「今やるとよさそうなこと」を提案するタスク管理アプリ。">
+<meta name="theme-color" content="#f7f5f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16161a" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="今！やること">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="appbar">
+  <h1 class="appbar__title">今！<span>やることリスト</span></h1>
+  <button class="appbar__add" id="btn-add" type="button" aria-label="タスクを追加">＋</button>
+</header>
+
+<main id="main">
+
+  <!-- ============ 今！ ============ -->
+  <section class="view" id="view-now" aria-label="今やることの提案">
+    <div class="card">
+      <h2 class="card__title">空いた時間はどれくらい？</h2>
+      <div class="chips" id="minute-chips" role="group" aria-label="空き時間"></div>
+      <label class="field field--inline">
+        <span>自分で入力</span>
+        <input type="number" id="minutes-input" min="1" max="600" step="5" value="30" inputmode="numeric">
+        <span class="unit">分</span>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2 class="card__title">今の気分は？</h2>
+      <div class="chips chips--mood" id="mood-chips" role="group" aria-label="気分"></div>
+      <p class="card__hint">やりたいことの種類があれば選んでください（任意・複数可）</p>
+      <div class="chips" id="kind-chips" role="group" aria-label="やりたい種類"></div>
+    </div>
+
+    <button class="btn btn--primary btn--big" id="btn-suggest" type="button">この条件で提案する</button>
+
+    <div id="suggest-result" class="suggest-result" aria-live="polite"></div>
+  </section>
+
+  <!-- ============ タスク ============ -->
+  <section class="view" id="view-tasks" hidden aria-label="タスク一覧">
+    <div class="filterbar">
+      <div class="chips" id="filter-chips" role="group" aria-label="締切で絞り込み"></div>
+      <label class="switch">
+        <input type="checkbox" id="show-done">
+        <span>完了したものも表示</span>
+      </label>
+    </div>
+    <div id="task-list" class="task-list"></div>
+  </section>
+
+  <!-- ============ カレンダー ============ -->
+  <section class="view" id="view-calendar" hidden aria-label="カレンダー">
+    <div class="cal__head">
+      <button class="btn btn--icon" id="cal-prev" type="button" aria-label="前の月">‹</button>
+      <h2 id="cal-label" class="cal__label"></h2>
+      <button class="btn btn--icon" id="cal-next" type="button" aria-label="次の月">›</button>
+      <button class="btn btn--ghost" id="cal-today" type="button">今日</button>
+    </div>
+    <div class="cal__grid" id="cal-grid"></div>
+    <div class="cal__legend">
+      <span><i class="dot dot--over"></i>期限切れ</span>
+      <span><i class="dot dot--soon"></i>3日以内</span>
+      <span><i class="dot dot--later"></i>先</span>
+      <span><i class="dot dot--done"></i>完了</span>
+    </div>
+    <div id="cal-detail" class="cal__detail"></div>
+  </section>
+
+  <!-- ============ 設定 ============ -->
+  <section class="view" id="view-settings" hidden aria-label="設定">
+    <div class="card">
+      <h2 class="card__title">このアプリについて</h2>
+      <p class="prose">
+        入力したタスクは<strong>この端末のブラウザの中だけ</strong>に保存されます。
+        サーバーには何も送信していないので、他の人に見られることはありません。
+        その代わり、ブラウザのデータを消すとタスクも消えます。大事なものは下からバックアップしてください。
+      </p>
+    </div>
+
+    <div class="card">
+      <h2 class="card__title">バックアップ</h2>
+      <div class="row">
+        <button class="btn" id="btn-export" type="button">ファイルに書き出す</button>
+        <button class="btn" id="btn-import" type="button">ファイルから読み込む</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+      </div>
+      <p class="card__hint">読み込みは、いまあるタスクに追加する形で取り込みます（同じタスクは重複しません）。</p>
+    </div>
+
+    <div class="card">
+      <h2 class="card__title">記録</h2>
+      <div id="stats" class="stats"></div>
+      <div id="history" class="history"></div>
+    </div>
+
+    <div class="card card--danger">
+      <h2 class="card__title">データを全部消す</h2>
+      <p class="card__hint">元に戻せません。先にバックアップを取ってください。</p>
+      <button class="btn btn--danger" id="btn-clear" type="button">すべて削除</button>
+    </div>
+
+    <div class="card">
+      <h2 class="card__title">使い方のコツ</h2>
+      <ul class="prose prose--list">
+        <li><strong>ページ単位で登録する</strong>と、15分だけ空いたときでも「3ページ進める」と提案できます。</li>
+        <li><strong>必要な集中度</strong>を正直に付けておくと、だるい日に重いタスクを勧められずに済みます。</li>
+        <li>提案が的外れなときは、空き時間か気分を変えてもう一度押してみてください。</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<nav class="tabbar" id="tabbar" aria-label="画面の切り替え">
+  <button class="tab is-active" data-view="now" type="button"><span class="tab__icon">⚡</span>今！</button>
+  <button class="tab" data-view="tasks" type="button"><span class="tab__icon">📋</span>タスク</button>
+  <button class="tab" data-view="calendar" type="button"><span class="tab__icon">🗓</span>カレンダー</button>
+  <button class="tab" data-view="settings" type="button"><span class="tab__icon">⚙️</span>設定</button>
+</nav>
+
+<!-- ============ タスクの追加・編集 ============ -->
+<dialog class="sheet" id="task-dialog">
+  <form method="dialog" id="task-form" class="sheet__body">
+    <div class="sheet__head">
+      <h2 id="task-dialog-title">タスクを追加</h2>
+      <button class="btn btn--icon" data-close type="button" aria-label="閉じる">✕</button>
+    </div>
+
+    <label class="field">
+      <span>やること</span>
+      <input type="text" name="title" id="f-title" required maxlength="100" placeholder="例：数学の問題集を解く" autocomplete="off">
+    </label>
+
+    <fieldset class="field">
+      <legend>いつまでに</legend>
+      <div class="chips" id="due-chips" role="group"></div>
+      <input type="date" name="due" id="f-due" required>
+    </fieldset>
+
+    <fieldset class="field">
+      <legend>どれくらい時間がかかる？</legend>
+      <div class="chips" id="unit-chips" role="group"></div>
+      <div class="estimate">
+        <label class="estimate__part">
+          <span id="f-count-label">回数</span>
+          <input type="number" name="totalUnits" id="f-count" min="1" max="9999" value="1" inputmode="numeric" required>
+        </label>
+        <span class="estimate__x">×</span>
+        <label class="estimate__part">
+          <span><span id="f-per-label">タスク</span>あたり</span>
+          <span class="estimate__minutes">
+            <input type="number" name="minutesPerUnit" id="f-minutes" min="1" max="1440" value="30" inputmode="numeric" required>分
+          </span>
+        </label>
+      </div>
+      <p class="estimate__total" id="f-total">合計 30分</p>
+    </fieldset>
+
+    <fieldset class="field">
+      <legend>必要な集中度</legend>
+      <div class="chips" id="focus-chips" role="group"></div>
+    </fieldset>
+
+    <fieldset class="field">
+      <legend>種類</legend>
+      <div class="chips" id="kind-select" role="group"></div>
+    </fieldset>
+
+    <label class="field">
+      <span>メモ（任意）</span>
+      <textarea name="note" id="f-note" rows="2" maxlength="500" placeholder="場所、持ち物、細かい手順など"></textarea>
+    </label>
+
+    <div class="sheet__foot">
+      <button class="btn btn--danger btn--ghost" id="btn-delete" type="button" hidden>削除</button>
+      <span class="spacer"></span>
+      <button class="btn" data-close type="button">やめる</button>
+      <button class="btn btn--primary" value="save" type="submit">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ タイマー ============ -->
+<dialog class="sheet sheet--timer" id="timer-dialog">
+  <div class="sheet__body">
+    <div class="sheet__head">
+      <h2 id="timer-title">作業中</h2>
+      <button class="btn btn--icon" id="timer-close" type="button" aria-label="閉じる">✕</button>
+    </div>
+    <p class="timer__task" id="timer-task"></p>
+
+    <div id="timer-running">
+      <div class="timer__clock" id="timer-clock" role="timer" aria-live="off">00:00</div>
+      <p class="timer__plan" id="timer-plan"></p>
+      <div class="timer__controls">
+        <button class="btn btn--primary" id="timer-toggle" type="button">一時停止</button>
+        <button class="btn" id="timer-finish" type="button">終わった</button>
+      </div>
+    </div>
+
+    <form id="timer-report" class="timer__report" hidden>
+      <p class="timer__question" id="timer-question">どこまで進みましたか？</p>
+      <label class="field field--inline" id="timer-units-field">
+        <input type="number" id="timer-units" min="0" max="9999" value="1" inputmode="numeric">
+        <span class="unit" id="timer-units-label">ページ</span>
+      </label>
+      <p class="card__hint" id="timer-elapsed"></p>
+      <div class="timer__controls">
+        <button class="btn btn--primary" type="submit" id="timer-save">記録する</button>
+        <button class="btn" id="timer-skip" type="button">記録せずに閉じる</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
