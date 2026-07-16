@@ -79,7 +79,8 @@ export function renderCalendar(grid, cursor, selected, onSelect) {
     }
 
     const count = tasks.length ? `、タスク${tasks.length}件` : '';
-    cell.setAttribute('aria-label', `${month + 1}月${d.getDate()}日${count}`);
+    // 前後の月にはみ出したマスもあるので、表示中の月ではなくマス自身の月を読ませる。
+    cell.setAttribute('aria-label', `${d.getMonth() + 1}月${d.getDate()}日${count}`);
     cell.addEventListener('click', () => onSelect(iso));
     grid.append(cell);
   }

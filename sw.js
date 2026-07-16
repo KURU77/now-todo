@@ -3,7 +3,7 @@
 // 更新があったら次の起動から新しいものに差し替える。
 // タスクのデータは localStorage にあるので、ここでは扱わない。
 
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.0.1';
 const CACHE = `now-todo-${VERSION}`;
 
 const SHELL = [

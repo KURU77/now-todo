@@ -37,6 +37,11 @@
 
 * { box-sizing: border-box; }
 
+/* display を指定した要素にも hidden 属性を効かせる。
+   ブラウザ既定の [hidden]{display:none} は .view{display:flex} のような
+   作者スタイルに負けるので、ここで明示的に打ち消す。 */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
