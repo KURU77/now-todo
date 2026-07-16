@@ -73,8 +73,39 @@
       <span><i class="dot dot--soon"></i>3日以内</span>
       <span><i class="dot dot--later"></i>先</span>
       <span><i class="dot dot--done"></i>完了</span>
+      <span><i class="legend-bar"></i>空き時間あり</span>
     </div>
     <div id="cal-detail" class="cal__detail"></div>
+  </section>
+
+  <!-- ============ 予定 ============ -->
+  <section class="view" id="view-plan" hidden aria-label="自動割り当て">
+    <div class="card">
+      <h2 class="card__title">空いている時間</h2>
+      <p class="card__hint" id="slot-summary"></p>
+      <form class="slotform" id="slot-form">
+        <label class="slotform__part">
+          <span>日付</span>
+          <input type="date" id="s-date" required>
+        </label>
+        <label class="slotform__part">
+          <span>から</span>
+          <input type="time" id="s-start" step="300" value="19:00" required>
+        </label>
+        <label class="slotform__part">
+          <span>まで</span>
+          <input type="time" id="s-end" step="300" value="21:00" required>
+        </label>
+        <button class="btn btn--primary" type="submit">追加</button>
+      </form>
+      <div class="chips" id="slot-quick" role="group" aria-label="よく使う時間帯"></div>
+      <div id="slot-list" class="slot-list"></div>
+    </div>
+
+    <button class="btn btn--primary btn--big" id="btn-plan" type="button">空き時間にタスクを割り当てる</button>
+    <p class="card__hint plan__mode" id="plan-mode"></p>
+
+    <div id="plan-result" class="plan-result" aria-live="polite"></div>
   </section>
 
   <!-- ============ 設定 ============ -->
@@ -86,6 +117,38 @@
         サーバーには何も送信していないので、他の人に見られることはありません。
         その代わり、ブラウザのデータを消すとタスクも消えます。大事なものは下からバックアップしてください。
       </p>
+    </div>
+
+    <div class="card">
+      <h2 class="card__title">AIに順番を相談する（任意）</h2>
+      <p class="prose">
+        割り当てそのものは、<strong>AIなしでも常に正確に動きます</strong>。
+        「何分の枠に何ページ入るか」は算数なので、アプリの計算のほうが確実です。
+        AIを入れると、タスク名やメモを読んで<strong>どれから手を付けるかの順番</strong>だけを考えてくれます。
+      </p>
+      <label class="switch switch--block">
+        <input type="checkbox" id="use-ai">
+        <span>AIに順番を相談する</span>
+      </label>
+      <label class="field">
+        <span>Anthropic APIキー</span>
+        <input type="password" id="api-key" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+      </label>
+      <div class="row">
+        <button class="btn" id="btn-test-ai" type="button">つながるか試す</button>
+        <button class="btn btn--ghost btn--danger" id="btn-clear-key" type="button">キーを消す</button>
+      </div>
+      <p class="card__hint" id="ai-status"></p>
+      <details class="toolong">
+        <summary>キーの扱いと費用について</summary>
+        <ul class="prose prose--list">
+          <li>キーは<strong>この端末のブラウザにだけ</strong>保存され、そこから直接 api.anthropic.com へ送られます。中継サーバーはありません。</li>
+          <li>バックアップファイルにキーは<strong>含めません</strong>。ファイルが漏れてもキーは漏れません。</li>
+          <li>共用のパソコンでは使わないでください。ブラウザを触れる人はキーを取り出せます。</li>
+          <li>キーは <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Anthropic Console</a> で発行します。<strong>使った分だけ課金されます</strong>（1回の相談はごく少額ですが、無料ではありません）。</li>
+          <li>他の人にこのアプリを渡すときは、その人が自分のキーを入れる形になります。未入力でも全機能が普通に使えます。</li>
+        </ul>
+      </details>
     </div>
 
     <div class="card">
@@ -125,6 +188,7 @@
   <button class="tab is-active" data-view="now" type="button"><span class="tab__icon">⚡</span>今！</button>
   <button class="tab" data-view="tasks" type="button"><span class="tab__icon">📋</span>タスク</button>
   <button class="tab" data-view="calendar" type="button"><span class="tab__icon">🗓</span>カレンダー</button>
+  <button class="tab" data-view="plan" type="button"><span class="tab__icon">🧩</span>予定</button>
   <button class="tab" data-view="settings" type="button"><span class="tab__icon">⚙️</span>設定</button>
 </nav>
 

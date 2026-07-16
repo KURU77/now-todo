@@ -193,6 +193,7 @@ textarea { resize: vertical; }
 
 .switch { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--dim); cursor: pointer; }
 .switch input { width: 16px; height: 16px; accent-color: var(--accent); }
+.switch--block { display: flex; margin: 12px 0; font-size: 14px; color: var(--text); font-weight: 600; }
 
 /* ---------------------------------------------------------------- 提案 */
 
@@ -344,6 +345,16 @@ textarea { resize: vertical; }
 .cal__day.is-today .cal__num { font-weight: 800; color: var(--accent); }
 .cal__day.is-selected { border-color: var(--accent); }
 
+/* 空き時間がある日は下に緑の帯を敷く。締切の点とは別の情報なので形も色も分ける。 */
+.cal__day.has-slot::after {
+  content: '';
+  position: absolute;
+  left: 20%; right: 20%; bottom: 3px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ok);
+}
+
 .cal__num { font-size: 13px; line-height: 1.2; }
 .cal__mins { font-size: 9px; color: var(--dim); line-height: 1.1; white-space: nowrap; }
 
@@ -360,6 +371,69 @@ textarea { resize: vertical; }
 .cal__detail-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cal__detail-head h3 { font-size: 15px; }
 .cal__detail-head .btn { margin-left: auto; }
+
+/* ---------------------------------------------------------------- 予定 */
+
+.slotform { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-bottom: 10px; }
+.slotform__part { flex: 1 1 90px; font-size: 12px; font-weight: 700; color: var(--dim); }
+.slotform__part span { display: block; margin-bottom: 4px; }
+.slotform .btn { flex: 0 0 auto; }
+
+.slot-list { margin-top: 12px; }
+.slot-list__day { margin: 12px 0 4px; font-size: 13px; font-weight: 700; color: var(--dim); }
+
+.slot { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); }
+.slot__time { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; white-space: nowrap; }
+.slot__len { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.plan__mode { text-align: center; margin: -4px 0 0; }
+.plan-result { display: flex; flex-direction: column; gap: 12px; scroll-margin-top: 70px; }
+
+.plan-note {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--radius);
+}
+.plan-note p { margin: 0; font-size: 13.5px; }
+.plan-note__icon { font-size: 16px; line-height: 1.5; }
+
+.planday {
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.planday__head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.planday__head h3 { flex: 1; font-size: 15px; }
+
+.planrow { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+.planrow__time {
+  flex: 0 0 46px;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  padding-top: 2px;
+}
+.planrow__body {
+  flex: 1;
+  min-width: 0;
+  border: 0; padding: 0; background: none; color: inherit; font: inherit;
+  text-align: left; cursor: pointer;
+}
+.planrow__title { display: block; font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+.planrow__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 4px; font-size: 12px; }
+.planrow .btn--icon { flex: 0 0 auto; color: var(--accent); }
+
+.cal__slots { padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.cal__slots h4 { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
+.cal__slots .btn--wide { margin-top: 10px; }
+
+.legend-bar { width: 10px; height: 3px; border-radius: 2px; background: var(--ok); display: inline-block; }
 
 /* ---------------------------------------------------------------- 設定 */
 
@@ -379,7 +453,7 @@ textarea { resize: vertical; }
   left: 0; right: 0; bottom: 0;
   z-index: 30;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background: color-mix(in srgb, var(--surface) 92%, transparent);

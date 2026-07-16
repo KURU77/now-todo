@@ -1,7 +1,7 @@
 // データの保存・読み書き。保存先はブラウザの localStorage のみ（サーバーには何も送りません）。
 
 const KEY = 'now-todo/v1';
-const SCHEMA = 1;
+const SCHEMA = 2;
 
 /** タスクの「種類」。提案のときに気分と突き合わせます。 */
 export const KINDS = {
@@ -38,7 +38,14 @@ export const HORIZONS = [
   { id: 'year', label: '1年', days: 365 },
 ];
 
-const emptyState = () => ({ schema: SCHEMA, tasks: [], history: [] });
+const emptyState = () => ({
+  schema: SCHEMA,
+  tasks: [],
+  history: [],
+  slots: [],      // 「この日のこの時間が空いている」
+  plan: null,     // 空き時間に割り当てた予定
+  settings: { apiKey: '', useAI: false },
+});
 
 let state = load();
 const listeners = new Set();
@@ -49,10 +56,14 @@ function load() {
     if (!raw) return emptyState();
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.tasks)) return emptyState();
-    parsed.schema = SCHEMA;
-    parsed.history = Array.isArray(parsed.history) ? parsed.history : [];
-    parsed.tasks = parsed.tasks.map(normalize);
-    return parsed;
+    const base = emptyState();
+    // 古い版で保存したデータには slots などが無いので、既定値で埋める。
+    const s = { ...base, ...parsed, schema: SCHEMA };
+    s.history = Array.isArray(s.history) ? s.history : [];
+    s.slots = Array.isArray(s.slots) ? s.slots.map(normalizeSlot).filter(Boolean) : [];
+    s.settings = { ...base.settings, ...(s.settings || {}) };
+    s.tasks = s.tasks.map(normalize);
+    return s;
   } catch (e) {
     console.warn('保存データを読めませんでした。空の状態で始めます。', e);
     return emptyState();
@@ -82,6 +93,21 @@ function clampNum(v, min, max, fallback) {
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+/** 壊れた空き時間（終わりが始まりより前など）は捨てる。 */
+function normalizeSlot(s) {
+  if (!s || !isISO(s.date) || !isHHMM(s.start) || !isHHMM(s.end)) return null;
+  if (toMinutes(s.end) <= toMinutes(s.start)) return null;
+  return { id: s.id || uid(), date: s.date, start: s.start, end: s.end };
+}
+
+function isISO(v) {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+function isHHMM(v) {
+  return typeof v === 'string' && /^\d{2}:\d{2}$/.test(v);
 }
 
 function persist() {
@@ -127,6 +153,30 @@ export function fromISO(s) {
 export function daysUntil(iso, from = todayISO()) {
   const ms = fromISO(iso) - fromISO(from);
   return Math.round(ms / 86400000);
+}
+
+// ---- 時刻ユーティリティ（"HH:MM" ⇔ 0時からの分数） ----
+
+export function toMinutes(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+export function toHHMM(min) {
+  const m = Math.max(0, Math.min(24 * 60, Math.round(min)));
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+export function slotMinutes(slot) {
+  return toMinutes(slot.end) - toMinutes(slot.start);
+}
+
+/** 分数を「1時間30分」のように読みやすくする。 */
+export function formatMinutes(min) {
+  if (min < 60) return `${min}分`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h}時間${m}分` : `${h}時間`;
 }
 
 export function horizonDate(id) {
@@ -250,21 +300,102 @@ export function logProgress(id, units, minutes) {
   updateTask(id, { doneUnits: t.doneUnits + add });
 }
 
+// ---- 空き時間 ----
+
+export function slotsOn(iso) {
+  return state.slots
+    .filter((s) => s.date === iso)
+    .sort((a, b) => toMinutes(a.start) - toMinutes(b.start));
+}
+
+/** 今日以降の空き時間を、早い順に返す。 */
+export function upcomingSlots(fromISO = todayISO()) {
+  return state.slots
+    .filter((s) => s.date >= fromISO)
+    .sort((a, b) => (a.date === b.date ? toMinutes(a.start) - toMinutes(b.start) : a.date < b.date ? -1 : 1));
+}
+
+/** 追加できたら slot、時間が逆・重複しているなら理由の文字列を返す。 */
+export function addSlot({ date, start, end }) {
+  const slot = normalizeSlot({ date, start, end });
+  if (!slot) return '終わりの時刻を始まりより後にしてください';
+  const overlap = slotsOn(date).find(
+    (s) => toMinutes(slot.start) < toMinutes(s.end) && toMinutes(s.start) < toMinutes(slot.end),
+  );
+  if (overlap) return `${overlap.start}〜${overlap.end} と重なっています`;
+  state.slots.push(slot);
+  persist();
+  return slot;
+}
+
+export function removeSlot(id) {
+  state.slots = state.slots.filter((s) => s.id !== id);
+  if (state.plan) state.plan.items = state.plan.items.filter((i) => i.slotId !== id);
+  persist();
+}
+
+/** 過ぎた日の空き時間を片付ける。件数を返す。 */
+export function pruneOldSlots() {
+  const today = todayISO();
+  const before = state.slots.length;
+  state.slots = state.slots.filter((s) => s.date >= today);
+  if (state.slots.length !== before) persist();
+  return before - state.slots.length;
+}
+
+// ---- 予定（空き時間への割り当て） ----
+
+export function setPlan(plan) {
+  state.plan = plan;
+  persist();
+}
+
+export function clearPlan() {
+  state.plan = null;
+  persist();
+}
+
+export function planItemsOn(iso) {
+  if (!state.plan) return [];
+  return state.plan.items.filter((i) => i.date === iso);
+}
+
+// ---- 設定 ----
+
+export function getSettings() {
+  return state.settings;
+}
+
+export function updateSettings(patch) {
+  state.settings = { ...state.settings, ...patch };
+  persist();
+}
+
 // ---- バックアップ ----
 
 export function exportJSON() {
-  return JSON.stringify({ ...state, exportedAt: new Date().toISOString() }, null, 2);
+  // APIキーは書き出さない。バックアップファイルが漏れても鍵は漏れないようにする。
+  const { settings, ...rest } = state;
+  return JSON.stringify(
+    { ...rest, settings: { useAI: settings.useAI }, exportedAt: new Date().toISOString() },
+    null,
+    2,
+  );
 }
 
 export function importJSON(text, mode = 'merge') {
   const parsed = JSON.parse(text);
   if (!parsed || !Array.isArray(parsed.tasks)) throw new Error('タスクの配列が見つかりません');
   const incoming = parsed.tasks.map(normalize);
+  const incomingSlots = Array.isArray(parsed.slots) ? parsed.slots.map(normalizeSlot).filter(Boolean) : [];
   if (mode === 'replace') {
-    state = { schema: SCHEMA, tasks: incoming, history: parsed.history || [] };
+    // 設定（APIキー）はこの端末のものを残す。読み込んだファイルには入っていない。
+    state = { ...emptyState(), tasks: incoming, history: parsed.history || [], slots: incomingSlots, settings: state.settings };
   } else {
-    const known = new Set(state.tasks.map((t) => t.id));
-    state.tasks.push(...incoming.filter((t) => !known.has(t.id)));
+    const knownTasks = new Set(state.tasks.map((t) => t.id));
+    state.tasks.push(...incoming.filter((t) => !knownTasks.has(t.id)));
+    const knownSlots = new Set(state.slots.map((s) => s.id));
+    state.slots.push(...incomingSlots.filter((s) => !knownSlots.has(s.id)));
   }
   persist();
   return incoming.length;
@@ -274,3 +405,5 @@ export function clearAll() {
   state = emptyState();
   persist();
 }
+
+export { normalizeSlot };

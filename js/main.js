@@ -4,6 +4,8 @@ import * as store from './store.js';
 import { KINDS, FOCUS, UNITS, HORIZONS } from './store.js';
 import { MOODS, suggest, planFor, headline } from './suggest.js';
 import { renderCalendar, monthLabel, dayLabel, formatMinutes } from './calendar.js';
+import { buildPlan, summarize, candidates } from './scheduler.js';
+import { planOrder, aiEnabled, hasApiKey } from './ai.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -19,6 +21,14 @@ const FILTERS = [
   { id: 'y1', label: '1年', days: 365 },
 ];
 
+/** 空き時間の入力を早くするためのよくある時間帯。 */
+const SLOT_PRESETS = [
+  { label: '朝', start: '07:00', end: '09:00' },
+  { label: '昼休み', start: '12:00', end: '13:00' },
+  { label: '夕方', start: '17:00', end: '19:00' },
+  { label: '夜', start: '19:00', end: '22:00' },
+];
+
 const ui = {
   view: 'now',
   free: 30,
@@ -32,6 +42,8 @@ const ui = {
   draft: null,        // ダイアログ内のチップ選択状態
   showAllPicks: false,
   lastResult: null,
+  planning: false,    // 割り当ての実行中
+  planNote: '',       // AIの助言、または退避したときの理由
 };
 
 // ---------------------------------------------------------------- 共通パーツ
@@ -320,6 +332,244 @@ function renderDayDetail() {
   box.append(head);
 
   for (const t of tasks) box.append(renderTaskRow(t));
+
+  // この日の空き時間と、そこに割り当てられた予定。
+  const slots = store.slotsOn(iso);
+  const items = store.planItemsOn(iso);
+  const sub = document.createElement('div');
+  sub.className = 'cal__slots';
+  const free = slots.reduce((s, x) => s + store.slotMinutes(x), 0);
+  sub.innerHTML = `<h4>空き時間 <span class="dim">${slots.length ? formatMinutes(free) : 'なし'}</span></h4>`;
+
+  for (const slot of slots) {
+    const planned = items.filter((i) => i.slotId === slot.id);
+    const row = document.createElement('div');
+    row.className = 'slot';
+    const names = planned
+      .map((i) => store.getState().tasks.find((t) => t.id === i.taskId)?.title)
+      .filter(Boolean);
+    row.innerHTML = `
+      <span class="slot__time">${slot.start} 〜 ${slot.end}</span>
+      <span class="slot__len dim">${names.length ? escape(names.join('、')) : '未割り当て'}</span>
+      <button class="btn btn--icon" type="button" aria-label="この空き時間を削除">✕</button>`;
+    $('button', row).addEventListener('click', () => {
+      store.removeSlot(slot.id);
+      toast('空き時間を削除しました');
+    });
+    sub.append(row);
+  }
+
+  const addSlot = document.createElement('button');
+  addSlot.className = 'btn btn--ghost btn--wide';
+  addSlot.type = 'button';
+  addSlot.textContent = 'この日の空き時間を登録する';
+  addSlot.addEventListener('click', () => {
+    $('#s-date').value = iso;
+    setView('plan');
+    setTimeout(() => $('#s-start').focus(), 50);
+  });
+  sub.append(addSlot);
+  box.append(sub);
+}
+
+// ---------------------------------------------------------------- 予定（自動割り当て）
+
+function renderPlanView() {
+  renderSlotSection();
+  renderPlanMode();
+  renderPlanResult();
+}
+
+function renderSlotSection() {
+  const slots = store.upcomingSlots();
+  const total = slots.reduce((s, x) => s + store.slotMinutes(x), 0);
+  $('#slot-summary').textContent = slots.length
+    ? `これから先の空き時間は ${slots.length}枠・合計 ${formatMinutes(total)}`
+    : 'まだ空き時間が登録されていません。下のフォームで「この日のこの時間が空いている」を登録してください。';
+
+  const quick = $('#slot-quick');
+  quick.innerHTML = '';
+  for (const p of SLOT_PRESETS) {
+    quick.append(chipButton({
+      label: p.label,
+      title: `${p.start}〜${p.end}`,
+      onClick: () => { $('#s-start').value = p.start; $('#s-end').value = p.end; },
+    }));
+  }
+
+  const box = $('#slot-list');
+  box.innerHTML = '';
+  if (slots.length === 0) return;
+
+  let lastDate = null;
+  for (const slot of slots) {
+    if (slot.date !== lastDate) {
+      const h = document.createElement('h3');
+      h.className = 'slot-list__day';
+      h.textContent = dayLabel(slot.date);
+      box.append(h);
+      lastDate = slot.date;
+    }
+    const row = document.createElement('div');
+    row.className = 'slot';
+    row.innerHTML = `
+      <span class="slot__time">${slot.start} 〜 ${slot.end}</span>
+      <span class="slot__len dim">${formatMinutes(store.slotMinutes(slot))}</span>
+      <button class="btn btn--icon" type="button" aria-label="${escape(dayLabel(slot.date))} ${slot.start}からの空き時間を削除">✕</button>`;
+    $('button', row).addEventListener('click', () => {
+      store.removeSlot(slot.id);
+      toast('空き時間を削除しました');
+    });
+    box.append(row);
+  }
+}
+
+function renderPlanMode() {
+  const el = $('#plan-mode');
+  if (aiEnabled()) el.textContent = 'AIに順番を相談してから割り当てます（時間の計算はアプリが行います）';
+  else if (hasApiKey()) el.textContent = 'AIは使いません（設定でオンにできます）';
+  else el.textContent = '締切が早いものから順に詰めます';
+  $('#btn-plan').disabled = ui.planning;
+  $('#btn-plan').textContent = ui.planning ? '考えています…' : '空き時間にタスクを割り当てる';
+}
+
+async function runPlan() {
+  if (ui.planning) return;
+  const slots = store.upcomingSlots();
+  if (slots.length === 0) {
+    toast('先に空き時間を登録してください');
+    return;
+  }
+  const tasks = candidates();
+  if (tasks.length === 0) {
+    toast('割り当てられるタスクがありません');
+    return;
+  }
+
+  ui.planning = true;
+  ui.planNote = '';
+  renderPlanMode();
+
+  let order = null;
+  let source = 'auto';
+  try {
+    if (aiEnabled()) {
+      const res = await planOrder({ tasks, slots });
+      order = res.order;
+      ui.planNote = res.advice;
+      source = 'ai';
+    }
+  } catch (e) {
+    // AIが失敗しても予定は作れる。理由だけ伝えて締切順に退避する。
+    console.warn('AIの相談に失敗しました', e);
+    ui.planNote = `AIに相談できなかったので、締切が早い順に組みました。（${e.message}）`;
+  }
+
+  const plan = buildPlan({ order });
+  store.setPlan({
+    generatedAt: new Date().toISOString(),
+    source,
+    items: plan.items,
+  });
+
+  ui.planning = false;
+  ui.lastPlan = plan;
+  renderPlanView();
+  $('#plan-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderPlanResult() {
+  const box = $('#plan-result');
+  box.innerHTML = '';
+  const saved = store.getState().plan;
+  if (!saved) return;
+
+  // 保存してある予定は、タスクが完了・削除されていることもあるので毎回組み直す。
+  const plan = ui.lastPlan || buildPlan();
+  const sum = summarize(plan);
+
+  if (ui.planNote) {
+    const note = document.createElement('div');
+    note.className = 'plan-note';
+    note.innerHTML = `<span class="plan-note__icon">${saved.source === 'ai' ? '💡' : 'ℹ️'}</span><p>${escape(ui.planNote)}</p>`;
+    box.append(note);
+  }
+
+  const head = document.createElement('p');
+  head.className = 'suggest-result__head';
+  head.textContent = sum.placed
+    ? `${sum.days}日ぶんの空き時間に ${formatMinutes(sum.minutes)} を割り当てました`
+    : '空き時間に入るタスクがありませんでした';
+  box.append(head);
+
+  const byDate = new Map();
+  for (const item of plan.items) {
+    if (!byDate.has(item.date)) byDate.set(item.date, []);
+    byDate.get(item.date).push(item);
+  }
+  for (const [date, items] of byDate) box.append(renderPlanDay(date, items));
+
+  if (sum.free > 0) {
+    const left = document.createElement('p');
+    left.className = 'card__hint';
+    left.textContent = `空き時間のうち ${formatMinutes(sum.free)} は余りました。`;
+    box.append(left);
+  }
+  if (plan.unplaced.length) box.append(renderUnplaced(plan.unplaced));
+}
+
+function renderPlanDay(date, items) {
+  const el = document.createElement('article');
+  el.className = 'planday';
+  const mins = items.reduce((s, i) => s + i.minutes, 0);
+  const head = document.createElement('div');
+  head.className = 'planday__head';
+  head.innerHTML = `<h3>${escape(dayLabel(date))}</h3><span class="dim">${formatMinutes(mins)}</span>`;
+  el.append(head);
+
+  for (const item of items) {
+    const task = store.getState().tasks.find((t) => t.id === item.taskId);
+    if (!task) continue;
+    const amount = task.unitType === 'task' ? '仕上げる' : `${item.units}${unitWord(task)}`;
+    const row = document.createElement('div');
+    row.className = 'planrow';
+    row.innerHTML = `
+      <span class="planrow__time">${item.start}<br><span class="dim">${item.end}</span></span>
+      <button class="planrow__body" type="button">
+        <span class="planrow__title">${escape(task.title)}</span>
+        <span class="planrow__meta">
+          <span class="badge">${KINDS[task.kind].icon} ${escape(amount)}</span>
+          <span class="badge ${dueBadge(task).cls}">${dueBadge(task).text}</span>
+          <span class="dim">${formatMinutes(item.minutes)}</span>
+        </span>
+      </button>
+      <button class="btn btn--icon" type="button" aria-label="${escape(task.title)} を始める">▶</button>`;
+    $('.planrow__body', row).addEventListener('click', () => openTaskDialog(task.id));
+    $('.btn--icon', row).addEventListener('click', () => {
+      startTimer(task, { units: item.units, minutes: item.minutes, finishes: item.units >= store.remainingUnits(task) });
+    });
+    el.append(row);
+  }
+  return el;
+}
+
+function renderUnplaced(unplaced) {
+  const el = document.createElement('div');
+  el.className = 'card card--danger';
+  el.innerHTML = `<h3 class="card__title">⚠️ 間に合わないかもしれません（${unplaced.length}件）</h3>`;
+  const ul = document.createElement('ul');
+  ul.className = 'prose prose--list';
+  for (const u of unplaced) {
+    const li = document.createElement('li');
+    li.innerHTML = `<strong>${escape(u.task.title)}</strong>（残り${formatMinutes(u.minutes)}）… ${escape(u.reason)}`;
+    ul.append(li);
+  }
+  el.append(ul);
+  const hint = document.createElement('p');
+  hint.className = 'card__hint';
+  hint.textContent = '空き時間を足すか、締切を延ばすか、見積もりを見直してください。';
+  el.append(hint);
+  return el;
 }
 
 // ---------------------------------------------------------------- タスク編集
@@ -508,6 +758,10 @@ function closeTimer() {
 // ---------------------------------------------------------------- 設定
 
 function renderSettings() {
+  const cfg = store.getSettings();
+  $('#use-ai').checked = !!cfg.useAI;
+  if ($('#api-key') !== document.activeElement) $('#api-key').value = cfg.apiKey || '';
+
   const s = store.getState();
   const active = s.tasks.filter((t) => !t.done);
   const soon = active.filter((t) => store.daysUntil(t.due) <= 7).length;
@@ -566,8 +820,43 @@ function setView(name) {
   for (const t of document.querySelectorAll('.tab')) t.classList.toggle('is-active', t.dataset.view === name);
   window.scrollTo({ top: 0 });
   if (name === 'calendar') renderCalendarView();
+  if (name === 'plan') renderPlanView();
   if (name === 'settings') renderSettings();
   location.hash = name;
+}
+
+/** 「つながるか試す」。実際の割り当てはせず、応答が返るかだけを見る。 */
+async function testAI() {
+  const btn = $('#btn-test-ai');
+  const status = $('#ai-status');
+  if (!hasApiKey()) {
+    status.textContent = '先にAPIキーを入力してください。';
+    return;
+  }
+  btn.disabled = true;
+  status.textContent = 'つないでいます…';
+  const probe = {
+    id: 'probe',
+    title: 'テスト',
+    note: '',
+    due: store.todayISO(),
+    unitType: 'task',
+    minutesPerUnit: 30,
+    totalUnits: 1,
+    doneUnits: 0,
+    focus: 2,
+    kind: 'think',
+  };
+  try {
+    await planOrder({
+      tasks: [probe],
+      slots: [{ id: 'probe', date: store.todayISO(), start: '09:00', end: '10:00' }],
+    });
+    status.textContent = '✅ つながりました。AIに順番を相談できます。';
+  } catch (e) {
+    status.textContent = `❌ ${e.message}`;
+  }
+  btn.disabled = false;
 }
 
 // ---------------------------------------------------------------- 起動
@@ -643,7 +932,44 @@ function bind() {
   });
   $('#timer-dialog').addEventListener('close', stopTimer);
 
+  // --- 予定（空き時間の登録と自動割り当て）
+  $('#slot-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const res = store.addSlot({
+      date: $('#s-date').value,
+      start: $('#s-start').value,
+      end: $('#s-end').value,
+    });
+    if (typeof res === 'string') {
+      toast(res);
+      return;
+    }
+    toast(`${dayLabel(res.date)} ${res.start}〜${res.end} を追加しました`);
+  });
+  $('#btn-plan').addEventListener('click', runPlan);
+
   // --- 設定
+  $('#use-ai').addEventListener('change', (e) => {
+    if (e.target.checked && !hasApiKey()) {
+      e.target.checked = false;
+      $('#ai-status').textContent = '先にAPIキーを入力してください。';
+      return;
+    }
+    store.updateSettings({ useAI: e.target.checked });
+  });
+  $('#api-key').addEventListener('change', (e) => {
+    const key = e.target.value.trim();
+    store.updateSettings({ apiKey: key, useAI: key ? store.getSettings().useAI : false });
+    $('#ai-status').textContent = key ? 'キーを保存しました。「つながるか試す」で確認できます。' : '';
+  });
+  $('#btn-test-ai').addEventListener('click', testAI);
+  $('#btn-clear-key').addEventListener('click', () => {
+    store.updateSettings({ apiKey: '', useAI: false });
+    $('#api-key').value = '';
+    $('#ai-status').textContent = 'キーを消しました。';
+    toast('APIキーを削除しました');
+  });
+
   $('#btn-export').addEventListener('click', exportFile);
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', (e) => {
@@ -662,6 +988,7 @@ function renderAll() {
   renderFilters();
   renderTaskList();
   if (ui.view === 'calendar') renderCalendarView();
+  if (ui.view === 'plan') { ui.lastPlan = null; renderPlanView(); }
   if (ui.view === 'settings') renderSettings();
   // 提案は表示中のときだけ、最新のタスクで作り直す。
   if (ui.lastResult) {
@@ -673,10 +1000,13 @@ function renderAll() {
 
 function boot() {
   bind();
+  store.pruneOldSlots();   // 過ぎた日の空き時間は残しておいても邪魔なだけ
+  $('#s-date').value = store.todayISO();
+  $('#s-date').min = store.todayISO();
   store.subscribe(renderAll);
 
   const hash = location.hash.replace('#', '');
-  setView(['now', 'tasks', 'calendar', 'settings'].includes(hash) ? hash : 'now');
+  setView(['now', 'tasks', 'calendar', 'plan', 'settings'].includes(hash) ? hash : 'now');
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

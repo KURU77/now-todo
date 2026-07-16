@@ -1,8 +1,17 @@
 // 月表示のカレンダー。締切日にタスクを置いて、その日の残り時間の合計を見せる。
 
-import { toISO, todayISO, fromISO, daysUntil, remainingMinutes, tasksOn } from './store.js';
+import { toISO, todayISO, fromISO, daysUntil, remainingMinutes, tasksOn, slotsOn, slotMinutes, formatMinutes } from './store.js';
 
-const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+// 書式そのものは store.js に置いてあるが、画面側はここから使うのでそのまま通す。
+export { formatMinutes };
+
+// 週は月曜はじまり。JSの getDay() は日曜=0 なので、並べ替えの計算では毎回ずらす。
+const WEEK = ['月', '火', '水', '木', '金', '土', '日'];
+
+/** その日が週の何番目か（月曜=0 〜 日曜=6）。 */
+function weekIndex(d) {
+  return (d.getDay() + 6) % 7;
+}
 
 /** 日付ごとの状態を色分けするためのクラス名を返す。 */
 function dayClassFor(tasks) {
@@ -13,13 +22,6 @@ function dayClassFor(tasks) {
   if (min < 0) return 'dot--over';
   if (min <= 3) return 'dot--soon';
   return 'dot--later';
-}
-
-export function formatMinutes(min) {
-  if (min < 60) return `${min}分`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m ? `${h}時間${m}分` : `${h}時間`;
 }
 
 /**
@@ -34,7 +36,7 @@ export function renderCalendar(grid, cursor, selected, onSelect) {
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const first = new Date(year, month, 1);
-  const start = new Date(year, month, 1 - first.getDay()); // 週の頭（日曜）に揃える
+  const start = new Date(year, month, 1 - weekIndex(first)); // 週の頭（月曜）に揃える
   const today = todayISO();
 
   for (const w of WEEK) {
@@ -52,6 +54,9 @@ export function renderCalendar(grid, cursor, selected, onSelect) {
     const undone = tasks.filter((t) => !t.done);
     const mins = undone.reduce((s, t) => s + remainingMinutes(t), 0);
 
+    const slots = slotsOn(iso);
+    const freeMins = slots.reduce((s, x) => s + slotMinutes(x), 0);
+
     const cell = document.createElement('button');
     cell.type = 'button';
     cell.className = 'cal__day';
@@ -59,6 +64,7 @@ export function renderCalendar(grid, cursor, selected, onSelect) {
     if (d.getMonth() !== month) cell.classList.add('is-other');
     if (iso === today) cell.classList.add('is-today');
     if (iso === selected) cell.classList.add('is-selected');
+    if (slots.length) cell.classList.add('has-slot');
     if (d.getDay() === 0) cell.classList.add('is-sun');
     if (d.getDay() === 6) cell.classList.add('is-sat');
 
@@ -78,9 +84,10 @@ export function renderCalendar(grid, cursor, selected, onSelect) {
       cell.append(label);
     }
 
-    const count = tasks.length ? `、タスク${tasks.length}件` : '';
+    const count = tasks.length ? `、締切のタスク${tasks.length}件` : '';
+    const free = slots.length ? `、空き時間${formatMinutes(freeMins)}` : '';
     // 前後の月にはみ出したマスもあるので、表示中の月ではなくマス自身の月を読ませる。
-    cell.setAttribute('aria-label', `${d.getMonth() + 1}月${d.getDate()}日${count}`);
+    cell.setAttribute('aria-label', `${d.getMonth() + 1}月${d.getDate()}日${count}${free}`);
     cell.addEventListener('click', () => onSelect(iso));
     grid.append(cell);
   }
@@ -92,5 +99,5 @@ export function monthLabel(cursor) {
 
 export function dayLabel(iso) {
   const d = fromISO(iso);
-  return `${d.getMonth() + 1}月${d.getDate()}日（${WEEK[d.getDay()]}）`;
+  return `${d.getMonth() + 1}月${d.getDate()}日（${WEEK[weekIndex(d)]}）`;
 }

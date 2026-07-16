@@ -3,7 +3,7 @@
 // 更新があったら次の起動から新しいものに差し替える。
 // タスクのデータは localStorage にあるので、ここでは扱わない。
 
-const VERSION = 'v1.0.1';
+const VERSION = 'v1.1.0';
 const CACHE = `now-todo-${VERSION}`;
 
 const SHELL = [
@@ -15,6 +15,8 @@ const SHELL = [
   './js/store.js',
   './js/suggest.js',
   './js/calendar.js',
+  './js/scheduler.js',
+  './js/ai.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
