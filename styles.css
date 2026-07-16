@@ -452,8 +452,11 @@ textarea { resize: vertical; }
   position: fixed;
   left: 0; right: 0; bottom: 0;
   z-index: 30;
+  /* タブの数を数えずに1段へ並べる。列数を固定すると、増やしたときに
+     はみ出したぶんが2段目へ落ちて潰れる。 */
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
@@ -466,12 +469,16 @@ textarea { resize: vertical; }
   align-items: center;
   justify-content: center;
   gap: 2px;
+  min-width: 0;          /* グリッドの列幅より広がって押し合わないように */
+  padding: 0 2px;
   border: 0;
   background: none;
   color: var(--dim);
   font: inherit;
   font-size: 11px;
   font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;   /* 「カレンダー」が2行に折れるのを防ぐ */
   cursor: pointer;
 }
 .tab__icon { font-size: 19px; line-height: 1; }

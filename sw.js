@@ -1,9 +1,12 @@
 // オフラインでも開けるようにするための Service Worker。
-// アプリ本体（HTML/CSS/JS）はインストール時にまとめてキャッシュし、
-// 更新があったら次の起動から新しいものに差し替える。
 // タスクのデータは localStorage にあるので、ここでは扱わない。
+//
+// 方針: 1つの版のファイル一式を、インストール時にまとめてキャッシュし、
+// **あとから個別に書き換えない**。配信中に一部だけ新しくすると、
+// 新しいHTMLと古いCSSのように世代が混ざって表示が壊れる。
+// 更新は VERSION を上げることでのみ起こり、次の起動から一式が入れ替わる。
 
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.1.2';
 const CACHE = `now-todo-${VERSION}`;
 
 const SHELL = [
@@ -14,9 +17,9 @@ const SHELL = [
   './js/main.js',
   './js/store.js',
   './js/suggest.js',
-  './js/calendar.js',
   './js/scheduler.js',
   './js/ai.js',
+  './js/calendar.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -41,35 +44,30 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const { request } = e;
-  if (request.method !== 'GET' || new URL(request.url).origin !== location.origin) return;
+  if (request.method !== 'GET') return;
 
-  // ページ遷移はネットワーク優先（更新をすぐ拾う）、繋がらなければキャッシュ。
-  if (request.mode === 'navigate') {
-    e.respondWith(
-      fetch(request)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(request, copy));
-          return res;
-        })
-        .catch(() => caches.match(request).then((r) => r || caches.match('./index.html'))),
-    );
-    return;
-  }
+  const url = new URL(request.url);
+  if (url.origin !== location.origin) return; // AIの呼び出しなどは素通し
 
-  // それ以外はキャッシュ優先。裏で取り直して次回に備える。
   e.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(request, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    }),
+    (async () => {
+      const cache = await caches.open(CACHE);
+
+      // ページ遷移。?v=... のような問い合わせが付いていても index.html を返す。
+      if (request.mode === 'navigate') {
+        return (await cache.match('./index.html')) || fetch(request);
+      }
+
+      // アプリ本体はこの版のキャッシュから返す。混ざらないよう書き戻さない。
+      const hit = await cache.match(request, { ignoreSearch: true });
+      if (hit) return hit;
+
+      // キャッシュに無いもの（将来追加したファイルなど）はネットワークへ。
+      try {
+        return await fetch(request);
+      } catch {
+        return new Response('', { status: 504, statusText: 'offline' });
+      }
+    })(),
   );
 });
