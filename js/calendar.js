@@ -1,6 +1,6 @@
 // 月表示のカレンダー。締切日にタスクを置いて、その日の残り時間の合計を見せる。
 
-import { toISO, todayISO, fromISO, daysUntil, remainingMinutes, tasksOn, slotsOn, slotMinutes, formatMinutes } from './store.js';
+import { toISO, todayISO, fromISO, daysUntil, remainingMinutes, tasksOn, slotsOn, slotMinutes, formatMinutes, periodTasksOn } from './store.js';
 
 // 書式そのものは store.js に置いてあるが、画面側はここから使うのでそのまま通す。
 export { formatMinutes };
@@ -56,6 +56,7 @@ export function renderCalendar(grid, cursor, selected, onSelect) {
 
     const slots = slotsOn(iso);
     const freeMins = slots.reduce((s, x) => s + slotMinutes(x), 0);
+    const periods = periodTasksOn(iso).filter((t) => !t.done);
 
     const cell = document.createElement('button');
     cell.type = 'button';
@@ -65,6 +66,7 @@ export function renderCalendar(grid, cursor, selected, onSelect) {
     if (iso === today) cell.classList.add('is-today');
     if (iso === selected) cell.classList.add('is-selected');
     if (slots.length) cell.classList.add('has-slot');
+    if (periods.length) cell.classList.add('has-period');
     if (d.getDay() === 0) cell.classList.add('is-sun');
     if (d.getDay() === 6) cell.classList.add('is-sat');
 
@@ -85,9 +87,10 @@ export function renderCalendar(grid, cursor, selected, onSelect) {
     }
 
     const count = tasks.length ? `、締切のタスク${tasks.length}件` : '';
+    const period = periods.length ? `、期間中のタスク${periods.length}件` : '';
     const free = slots.length ? `、空き時間${formatMinutes(freeMins)}` : '';
     // 前後の月にはみ出したマスもあるので、表示中の月ではなくマス自身の月を読ませる。
-    cell.setAttribute('aria-label', `${d.getMonth() + 1}月${d.getDate()}日${count}${free}`);
+    cell.setAttribute('aria-label', `${d.getMonth() + 1}月${d.getDate()}日${count}${period}${free}`);
     cell.addEventListener('click', () => onSelect(iso));
     grid.append(cell);
   }

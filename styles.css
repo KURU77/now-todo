@@ -12,6 +12,7 @@
   --ok: #2f7d5d;
   --warn: #c98a12;
   --over: #cf3b34;
+  --period: #7a5cc4;
   --radius: 14px;
   --shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 8px 24px rgba(0, 0, 0, .05);
   --tabbar-h: 60px;
@@ -31,6 +32,7 @@
     --ok: #5dbd90;
     --warn: #e0ab41;
     --over: #f0685f;
+    --period: #a892e6;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
   }
 }
@@ -164,7 +166,8 @@ main { max-width: 640px; margin: 0 auto; padding: 14px 14px 28px; }
 
 /* ---------------------------------------------------------------- fields */
 
-.field { display: block; border: 0; padding: 0; margin: 0 0 14px; }
+/* min-width:0 は fieldset の既定 min-content 幅を打ち消す（無いと中身が縮まず横にはみ出す）。 */
+.field { display: block; border: 0; padding: 0; margin: 0 0 14px; min-width: 0; }
 .field > span, .field > legend { display: block; font-size: 13px; font-weight: 700; color: var(--dim); margin-bottom: 6px; padding: 0; }
 .field--inline { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; }
 .field--inline > span { margin: 0; }
@@ -190,6 +193,14 @@ textarea { resize: vertical; }
 .estimate__x { padding-bottom: 10px; color: var(--dim); }
 .estimate__minutes { display: flex !important; align-items: center; gap: 6px; margin: 0 !important; }
 .estimate__total { margin: 8px 0 0; font-size: 14px; font-weight: 700; color: var(--accent); }
+
+/* 開始〜終了の日付入力（期間タスク）。締切だけのときは終了だけが残る。 */
+.whenrow { display: flex; align-items: flex-end; gap: 8px; margin: 8px 0; }
+.whenrow__part { flex: 1 1 0; min-width: 0; font-size: 12px; font-weight: 700; color: var(--dim); }
+.whenrow__part span { display: block; margin-bottom: 4px; }
+/* date 入力は中身ぶんの最小幅を持つので、min-width:0 にしないと2つ並べたとき縮まずはみ出す。 */
+.whenrow__part input { min-width: 0; }
+.whenrow__arrow { padding-bottom: 10px; color: var(--dim); }
 
 .switch { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--dim); cursor: pointer; }
 .switch input { width: 16px; height: 16px; accent-color: var(--accent); }
@@ -245,6 +256,7 @@ textarea { resize: vertical; }
 .badge--soon { background: color-mix(in srgb, var(--warn) 18%, transparent); border-color: transparent; color: var(--warn); }
 .badge--later, .badge--far { color: var(--dim); }
 .badge--done { background: color-mix(in srgb, var(--ok) 15%, transparent); border-color: transparent; color: var(--ok); }
+.badge--period { background: color-mix(in srgb, var(--period) 16%, transparent); border-color: transparent; color: var(--period); }
 
 .toolong { font-size: 13px; color: var(--dim); }
 .toolong summary { cursor: pointer; padding: 8px 0; }
@@ -388,6 +400,16 @@ textarea { resize: vertical; }
   background: var(--ok);
 }
 
+/* 期間タスクが進行中の日は上に紫の帯（締切の点・空き時間の緑帯とは別の情報）。 */
+.cal__day.has-period::before {
+  content: '';
+  position: absolute;
+  left: 20%; right: 20%; top: 3px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--period);
+}
+
 .cal__num { font-size: 13px; line-height: 1.2; }
 .cal__mins { font-size: 9px; color: var(--dim); line-height: 1.1; white-space: nowrap; }
 
@@ -467,6 +489,9 @@ textarea { resize: vertical; }
 .cal__slots .btn--wide { margin-top: 10px; }
 
 .legend-bar { width: 10px; height: 3px; border-radius: 2px; background: var(--ok); display: inline-block; }
+.legend-bar--period { background: var(--period); }
+
+.cal__section { margin: 14px 0 6px; font-size: 13px; font-weight: 700; color: var(--period); }
 
 /* ---------------------------------------------------------------- 設定 */
 

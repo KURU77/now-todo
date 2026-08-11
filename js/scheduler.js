@@ -7,6 +7,7 @@
 import {
   KINDS, todayISO, daysUntil, toMinutes, toHHMM, slotMinutes, formatMinutes,
   remainingUnits, remainingMinutes, isChunkable, activeTasks, upcomingSlots,
+  isPeriod,
 } from './store.js';
 
 /** 割り当ての候補になるタスク。締切が早い順、同じなら集中度が高い順。 */
@@ -64,6 +65,8 @@ export function buildPlan(opts = {}) {
       if (free <= 0) break;
       // 締切を過ぎた日には置かない。
       if (task.due < slot.date) continue;
+      // 期間タスクは、開始日より前の空き時間には置かない。
+      if (isPeriod(task) && slot.date < task.start) continue;
       const units = fit(task, free, left.get(task.id));
       if (units <= 0) continue;
 
@@ -99,15 +102,21 @@ export function buildPlan(opts = {}) {
 
 /** なぜ置けなかったのかを一言で。 */
 function whyUnplaced(task, slots) {
-  const inTime = slots.filter((s) => s.date <= task.due);
-  if (inTime.length === 0) {
-    return daysUntil(task.due) < 0 ? '締切を過ぎている' : '締切までに空き時間が登録されていない';
+  // 期間タスクは「開始〜締切」に入る空き時間だけが対象。締切だけのものは締切日まで。
+  const inWindow = slots.filter((s) => s.date <= task.due && (!isPeriod(task) || s.date >= task.start));
+  const wordEnd = isPeriod(task) ? '期間' : '締切';
+  if (inWindow.length === 0) {
+    if (daysUntil(task.due) < 0) return `${wordEnd}を過ぎている`;
+    if (isPeriod(task) && !slots.some((s) => s.date >= task.start && s.date <= task.due)) {
+      return 'この期間に空き時間が登録されていない';
+    }
+    return `${wordEnd}までに空き時間が登録されていない`;
   }
-  const longest = Math.max(...inTime.map(slotMinutes));
+  const longest = Math.max(...inWindow.map(slotMinutes));
   if (!isChunkable(task) && remainingMinutes(task) > longest) {
     return `まとめて${formatMinutes(remainingMinutes(task))}必要（いちばん長い空きは${formatMinutes(longest)}）`;
   }
-  return '締切までの空き時間が足りない';
+  return `${wordEnd}までの空き時間が足りない`;
 }
 
 /** 予定の合計や、間に合わないタスクの数をまとめる。 */
@@ -124,6 +133,7 @@ export function taskBrief(task) {
     id: task.id,
     title: task.title,
     note: task.note || undefined,
+    start: isPeriod(task) ? task.start : undefined,   // 期間タスクの開始日
     due: task.due,
     days_left: daysUntil(task.due),
     kind: KINDS[task.kind].label,

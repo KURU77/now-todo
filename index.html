@@ -73,6 +73,7 @@
       <span><i class="dot dot--soon"></i>3日以内</span>
       <span><i class="dot dot--later"></i>先</span>
       <span><i class="dot dot--done"></i>完了</span>
+      <span><i class="legend-bar legend-bar--period"></i>期間中</span>
       <span><i class="legend-bar"></i>空き時間あり</span>
     </div>
     <div id="cal-detail" class="cal__detail"></div>
@@ -130,23 +131,27 @@
         <input type="checkbox" id="use-ai">
         <span>AIに順番を相談する</span>
       </label>
+      <p class="card__hint">使うサービスを選んでください</p>
+      <div class="chips" id="provider-chips" role="group" aria-label="使うAIサービス"></div>
       <label class="field">
-        <span>Anthropic APIキー</span>
-        <input type="password" id="api-key" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+        <span id="api-key-label">APIキー</span>
+        <input type="password" id="api-key" autocomplete="off" spellcheck="false">
       </label>
+      <p class="card__hint" id="provider-note"></p>
       <div class="row">
         <button class="btn" id="btn-test-ai" type="button">つながるか試す</button>
+        <a class="btn btn--ghost" id="link-key" href="#" target="_blank" rel="noopener noreferrer">キーを発行</a>
         <button class="btn btn--ghost btn--danger" id="btn-clear-key" type="button">キーを消す</button>
       </div>
       <p class="card__hint" id="ai-status"></p>
       <details class="toolong">
         <summary>キーの扱いと費用について</summary>
         <ul class="prose prose--list">
-          <li>キーは<strong>この端末のブラウザにだけ</strong>保存され、そこから直接 api.anthropic.com へ送られます。中継サーバーはありません。</li>
+          <li>キーは<strong>この端末のブラウザにだけ</strong>保存され、そこから直接その会社のAPIへ送られます。中継サーバーはありません。</li>
           <li>バックアップファイルにキーは<strong>含めません</strong>。ファイルが漏れてもキーは漏れません。</li>
           <li>共用のパソコンでは使わないでください。ブラウザを触れる人はキーを取り出せます。</li>
-          <li>キーは <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Anthropic Console</a> で発行します。<strong>使った分だけ課金されます</strong>（1回の相談はごく少額ですが、無料ではありません）。</li>
-          <li>他の人にこのアプリを渡すときは、その人が自分のキーを入れる形になります。未入力でも全機能が普通に使えます。</li>
+          <li><strong>Gemini</strong> は Google AI Studio で無料枠つきのキーを発行できます。<strong>Claude</strong> は使った分だけ課金されます。</li>
+          <li>サービスごとに別々のキーを保存します。他の人にこのアプリを渡すときは、その人が自分のキーを入れます。<strong>未入力でも全機能が普通に使えます。</strong></li>
         </ul>
       </details>
     </div>
@@ -206,9 +211,20 @@
     </label>
 
     <fieldset class="field">
-      <legend>いつまでに</legend>
+      <legend>いつ</legend>
+      <div class="chips" id="whenmode-chips" role="group" aria-label="締切だけか期間か"></div>
+      <div class="whenrow">
+        <label class="whenrow__part" id="f-start-part" hidden>
+          <span>開始</span>
+          <input type="date" id="f-start">
+        </label>
+        <span class="whenrow__arrow" id="f-when-arrow" hidden aria-hidden="true">〜</span>
+        <label class="whenrow__part">
+          <span id="f-due-label">いつまでに</span>
+          <input type="date" name="due" id="f-due" required>
+        </label>
+      </div>
       <div class="chips" id="due-chips" role="group"></div>
-      <input type="date" name="due" id="f-due" required>
     </fieldset>
 
     <fieldset class="field">

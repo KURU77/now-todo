@@ -5,7 +5,7 @@ import { KINDS, FOCUS, UNITS, HORIZONS } from './store.js';
 import { MOODS, suggest, planFor, headline } from './suggest.js';
 import { renderCalendar, monthLabel, dayLabel, formatMinutes } from './calendar.js';
 import { buildPlan, summarize, candidates } from './scheduler.js';
-import { planOrder, aiEnabled, hasApiKey } from './ai.js';
+import { planOrder, aiEnabled, hasApiKey, PROVIDERS, currentProvider } from './ai.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -91,6 +91,19 @@ function dueBadge(task) {
 
 function unitWord(task) {
   return UNITS[task.unitType].per;
+}
+
+/** M/D 形式の短い日付。 */
+function shortDate(iso) {
+  const d = store.fromISO(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/** 一覧に出す「いつ」の表示。期間なら「7/10〜7/20」、締切なら締切日。 */
+function whenLabel(task) {
+  return store.isPeriod(task)
+    ? `${shortDate(task.start)}〜${shortDate(task.due)}`
+    : dayLabel(task.due);
 }
 
 // ---------------------------------------------------------------- 「今！」画面
@@ -200,6 +213,7 @@ function renderPick(pick, index) {
       <p class="pick__why">${escape(headline(pick))}</p>
       <div class="pick__tags">
         <span class="badge ${badge.cls}">${badge.text}</span>
+        ${store.isPeriod(task) ? `<span class="badge badge--period">📅 ${escape(shortDate(task.start))}〜${escape(shortDate(task.due))}</span>` : ''}
         <span class="badge">${KINDS[task.kind].icon} ${KINDS[task.kind].label}</span>
         <span class="badge">${chunk}</span>
       </div>
@@ -312,7 +326,8 @@ function renderTaskRow(t) {
       <h3 class="task__title">${escape(t.title)}</h3>
       <div class="task__meta">
         <span class="badge ${badge.cls}">${badge.text}</span>
-        <span class="task__due">${escape(dayLabel(t.due))}</span>
+        ${store.isPeriod(t) ? '<span class="badge badge--period">📅 期間</span>' : ''}
+        <span class="task__due">${escape(whenLabel(t))}</span>
         <span>${KINDS[t.kind].icon}</span>
         <span>${'●'.repeat(t.focus)}<span class="dim">${'○'.repeat(3 - t.focus)}</span></span>
         <span>${escape(amount)}</span>
@@ -372,6 +387,16 @@ function renderDayDetail() {
   box.append(head);
 
   for (const t of tasks) box.append(renderTaskRow(t));
+
+  // この日が期間内にあるタスク（締切日そのものは上の一覧に出ている）。
+  const periods = store.sortedTasks(store.periodTasksOn(iso).filter((t) => !t.done));
+  if (periods.length) {
+    const h = document.createElement('h4');
+    h.className = 'cal__section';
+    h.textContent = '📅 この期間中にやるタスク';
+    box.append(h);
+    for (const t of periods) box.append(renderTaskRow(t));
+  }
 
   // この日の空き時間と、そこに割り当てられた予定。
   const slots = store.slotsOn(iso);
@@ -466,7 +491,7 @@ function renderSlotSection() {
 
 function renderPlanMode() {
   const el = $('#plan-mode');
-  if (aiEnabled()) el.textContent = 'AIに順番を相談してから割り当てます（時間の計算はアプリが行います）';
+  if (aiEnabled()) el.textContent = `${PROVIDERS[currentProvider()].label} に順番を相談してから割り当てます（時間の計算はアプリが行います）`;
   else if (hasApiKey()) el.textContent = 'AIは使いません（設定でオンにできます）';
   else el.textContent = '締切が早いものから順に詰めます';
   $('#btn-plan').disabled = ui.planning;
@@ -618,12 +643,13 @@ function openTaskDialog(id = null, presetDue = null) {
   ui.editing = id;
   const t = id ? store.getState().tasks.find((x) => x.id === id) : null;
   ui.draft = t
-    ? { unitType: t.unitType, focus: t.focus, kind: t.kind }
-    : { unitType: 'task', focus: 2, kind: 'think' };
+    ? { unitType: t.unitType, focus: t.focus, kind: t.kind, usePeriod: store.isPeriod(t) }
+    : { unitType: 'task', focus: 2, kind: 'think', usePeriod: false };
 
   $('#task-dialog-title').textContent = t ? 'タスクを編集' : 'タスクを追加';
   $('#f-title').value = t ? t.title : '';
   $('#f-due').value = t ? t.due : (presetDue || store.horizonDate('week'));
+  $('#f-start').value = t && t.start ? t.start : store.todayISO();
   $('#f-count').value = t ? t.totalUnits : 1;
   $('#f-minutes').value = t ? t.minutesPerUnit : 30;
   $('#f-note').value = t ? t.note : '';
@@ -635,6 +661,29 @@ function openTaskDialog(id = null, presetDue = null) {
 }
 
 function renderDialogChips() {
+  // 締切だけ／期間 の切り替え。
+  const modeBox = $('#whenmode-chips');
+  modeBox.innerHTML = '';
+  [
+    { id: false, label: '締切だけ' },
+    { id: true, label: '期間を決める' },
+  ].forEach((m) => {
+    modeBox.append(chipButton({
+      label: m.label,
+      active: ui.draft.usePeriod === m.id,
+      onClick: () => {
+        ui.draft.usePeriod = m.id;
+        // 期間にしたのに開始が締切より後なら、開始を締切に合わせる。
+        if (m.id && $('#f-start').value > $('#f-due').value) $('#f-start').value = $('#f-due').value;
+        renderDialogChips();
+      },
+    }));
+  });
+  const period = ui.draft.usePeriod;
+  $('#f-start-part').hidden = !period;
+  $('#f-when-arrow').hidden = !period;
+  $('#f-due-label').textContent = period ? '終了' : 'いつまでに';
+
   const due = $('#due-chips');
   due.innerHTML = '';
   for (const h of HORIZONS) {
@@ -696,9 +745,16 @@ function updateEstimate() {
 }
 
 function saveTaskFromForm() {
+  const start = ui.draft.usePeriod ? $('#f-start').value : null;
+  const due = $('#f-due').value;
+  if (start && start > due) {
+    toast('開始日は終了日より前にしてください');
+    return false;
+  }
   const data = {
     title: $('#f-title').value.trim(),
-    due: $('#f-due').value,
+    start,
+    due,
     note: $('#f-note').value.trim(),
     unitType: ui.draft.unitType,
     focus: ui.draft.focus,
@@ -706,7 +762,7 @@ function saveTaskFromForm() {
     totalUnits: Number($('#f-count').value),
     minutesPerUnit: Number($('#f-minutes').value),
   };
-  if (!data.title || !data.due) return;
+  if (!data.title || !data.due) return false;
 
   if (ui.editing) {
     store.updateTask(ui.editing, data);
@@ -716,6 +772,7 @@ function saveTaskFromForm() {
     toast(`「${data.title}」を追加しました`);
   }
   ui.editing = null;
+  return true;
 }
 
 // ---------------------------------------------------------------- タイマー
@@ -800,7 +857,29 @@ function closeTimer() {
 function renderSettings() {
   const cfg = store.getSettings();
   $('#use-ai').checked = !!cfg.useAI;
-  if ($('#api-key') !== document.activeElement) $('#api-key').value = cfg.apiKey || '';
+
+  // 使うAIサービスの選択チップ。
+  const pbox = $('#provider-chips');
+  pbox.innerHTML = '';
+  for (const [id, p] of Object.entries(PROVIDERS)) {
+    pbox.append(chipButton({
+      label: p.label,
+      active: currentProvider() === id,
+      onClick: () => {
+        store.updateSettings({ provider: id });
+        renderSettings();
+      },
+    }));
+  }
+
+  const prov = currentProvider();
+  const meta = PROVIDERS[prov];
+  $('#api-key-label').textContent = `${meta.label} のAPIキー`;
+  $('#api-key').placeholder = meta.keyHint;
+  // 入力中は上書きしない。切り替え時は選んだサービスの保存済みキーを表示。
+  if ($('#api-key') !== document.activeElement) $('#api-key').value = store.apiKeyFor(prov);
+  $('#provider-note').textContent = meta.note;
+  $('#link-key').href = meta.keyUrl;
 
   const s = store.getState();
   const active = s.tasks.filter((t) => !t.done);
@@ -934,11 +1013,15 @@ function bind() {
   const dlg = $('#task-dialog');
   dlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dlg.close('cancel')));
   $('#task-form').addEventListener('submit', (e) => {
-    if (e.submitter && e.submitter.value === 'save') saveTaskFromForm();
+    if (e.submitter && e.submitter.value === 'save') {
+      // 保存に失敗（入力不備）したときはダイアログを閉じない。
+      if (saveTaskFromForm() === false) e.preventDefault();
+    }
   });
   $('#f-count').addEventListener('input', updateEstimate);
   $('#f-minutes').addEventListener('input', updateEstimate);
   $('#f-due').addEventListener('change', renderDialogChips);
+  $('#f-start').addEventListener('change', renderDialogChips);
   $('#btn-delete').addEventListener('click', () => {
     const t = store.getState().tasks.find((x) => x.id === ui.editing);
     if (!t) return;
@@ -998,16 +1081,21 @@ function bind() {
     store.updateSettings({ useAI: e.target.checked });
   });
   $('#api-key').addEventListener('change', (e) => {
+    const provider = currentProvider();
     const key = e.target.value.trim();
-    store.updateSettings({ apiKey: key, useAI: key ? store.getSettings().useAI : false });
+    store.setApiKey(provider, key);
+    // このサービスのキーを空にしたのに、それを使うAIがオンなら止める。
+    if (!key && !hasApiKey()) store.updateSettings({ useAI: false });
     $('#ai-status').textContent = key ? 'キーを保存しました。「つながるか試す」で確認できます。' : '';
   });
   $('#btn-test-ai').addEventListener('click', testAI);
   $('#btn-clear-key').addEventListener('click', () => {
-    store.updateSettings({ apiKey: '', useAI: false });
+    const provider = currentProvider();
+    store.setApiKey(provider, '');
+    if (!hasApiKey()) store.updateSettings({ useAI: false });
     $('#api-key').value = '';
     $('#ai-status').textContent = 'キーを消しました。';
-    toast('APIキーを削除しました');
+    toast(`${PROVIDERS[provider].label} のキーを削除しました`);
   });
 
   $('#btn-export').addEventListener('click', exportFile);
@@ -1048,7 +1136,9 @@ function boot() {
   const hash = location.hash.replace('#', '');
   setView(['now', 'tasks', 'calendar', 'plan', 'settings'].includes(hash) ? hash : 'now');
 
-  if ('serviceWorker' in navigator) {
+  // ネイティブアプリ（Capacitor）内では Service Worker を使わない。
+  // アプリの更新はストア経由なので、SWのキャッシュは古い版を配る事故のもとにしかならない。
+  if ('serviceWorker' in navigator && !window.Capacitor) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW登録に失敗', e));
     });

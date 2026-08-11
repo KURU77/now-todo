@@ -1,7 +1,7 @@
 // データの保存・読み書き。保存先はブラウザの localStorage のみ（サーバーには何も送りません）。
 
 const KEY = 'now-todo/v1';
-const SCHEMA = 2;
+const SCHEMA = 3;
 
 /** タスクの「種類」。提案のときに気分と突き合わせます。 */
 export const KINDS = {
@@ -44,8 +44,26 @@ const emptyState = () => ({
   history: [],
   slots: [],      // 「この日のこの時間が空いている」
   plan: null,     // 空き時間に割り当てた予定
-  settings: { apiKey: '', useAI: false },
+  settings: {
+    useAI: false,
+    provider: 'gemini',                     // 'gemini' | 'anthropic'
+    keys: { gemini: '', anthropic: '' },    // APIキーは提供元ごとに別々に持つ
+  },
 });
+
+/** 古い版の設定（apiKey 文字列だけ）を、提供元ごとのキー形式へ移す。 */
+function migrateSettings(base, old) {
+  const s = { ...base, ...(old || {}) };
+  s.keys = { ...base.keys, ...(s.keys || {}) };
+  // v2 までは Anthropic だけを apiKey に入れていた。あれば anthropic 側へ。
+  if (old && typeof old.apiKey === 'string' && old.apiKey && !s.keys.anthropic) {
+    s.keys.anthropic = old.apiKey;
+    if (old.useAI) s.provider = 'anthropic';
+  }
+  delete s.apiKey;
+  if (s.provider !== 'gemini' && s.provider !== 'anthropic') s.provider = 'gemini';
+  return s;
+}
 
 let state = load();
 const listeners = new Set();
@@ -61,7 +79,7 @@ function load() {
     const s = { ...base, ...parsed, schema: SCHEMA };
     s.history = Array.isArray(s.history) ? s.history : [];
     s.slots = Array.isArray(s.slots) ? s.slots.map(normalizeSlot).filter(Boolean) : [];
-    s.settings = { ...base.settings, ...(s.settings || {}) };
+    s.settings = migrateSettings(base.settings, s.settings);
     s.tasks = s.tasks.map(normalize);
     return s;
   } catch (e) {
@@ -71,11 +89,15 @@ function load() {
 }
 
 function normalize(t) {
+  const due = t.due || todayISO();
+  // 期間タスクは start（開始日）を持つ。start が due より後・不正なら締切だけ扱いにする。
+  const start = isISO(t.start) && t.start <= due ? t.start : null;
   return {
     id: t.id || uid(),
     title: String(t.title || '(名称なし)'),
     note: String(t.note || ''),
-    due: t.due || todayISO(),
+    start,
+    due,
     unitType: UNITS[t.unitType] ? t.unitType : 'task',
     minutesPerUnit: clampNum(t.minutesPerUnit, 1, 1440, 30),
     totalUnits: clampNum(t.totalUnits, 1, 9999, 1),
@@ -238,6 +260,28 @@ export function tasksOn(iso) {
   return state.tasks.filter((t) => t.due === iso);
 }
 
+// ---- 期間タスク ----
+
+export function isPeriod(t) {
+  return !!t.start;
+}
+
+/** 期間の開始が来ているか（締切だけのタスクは常に true）。まだ始まっていないものは提案・割り当ての対象外。 */
+export function hasStarted(t, from = todayISO()) {
+  return !isPeriod(t) || t.start <= from;
+}
+
+/** その日に「取り組んでよい」期間タスク。締切日そのものは tasksOn で扱うので除く。 */
+export function periodTasksOn(iso) {
+  return state.tasks.filter((t) => isPeriod(t) && t.start <= iso && iso <= t.due && t.due !== iso);
+}
+
+/** 期間の日数（開始日と終了日を含む）。 */
+export function periodDays(t) {
+  if (!isPeriod(t)) return 1;
+  return daysUntil(t.due, t.start) + 1;
+}
+
 // ---- 更新系 ----
 
 export function addTask(data) {
@@ -393,13 +437,23 @@ export function updateSettings(patch) {
   persist();
 }
 
+/** 提供元ごとのAPIキーを設定する。 */
+export function setApiKey(provider, key) {
+  state.settings.keys = { ...state.settings.keys, [provider]: (key || '').trim() };
+  persist();
+}
+
+export function apiKeyFor(provider) {
+  return (state.settings.keys?.[provider] || '').trim();
+}
+
 // ---- バックアップ ----
 
 export function exportJSON() {
   // APIキーは書き出さない。バックアップファイルが漏れても鍵は漏れないようにする。
   const { settings, ...rest } = state;
   return JSON.stringify(
-    { ...rest, settings: { useAI: settings.useAI }, exportedAt: new Date().toISOString() },
+    { ...rest, settings: { useAI: settings.useAI, provider: settings.provider }, exportedAt: new Date().toISOString() },
     null,
     2,
   );

@@ -7,7 +7,7 @@
 // 重みは合計 1.0。どれかを 0 にしても壊れないようにしてある。
 
 import {
-  KINDS, daysUntil, remainingUnits, remainingMinutes, isChunkable, activeTasks,
+  KINDS, daysUntil, remainingUnits, remainingMinutes, isChunkable, activeTasks, hasStarted,
 } from './store.js';
 
 const WEIGHTS = { urgency: 0.38, timeFit: 0.30, moodFit: 0.32 };
@@ -116,6 +116,9 @@ export function suggest({ minutes, energy, kinds }) {
   const tooLong = [];
 
   for (const task of activeTasks()) {
+    // 期間タスクは、開始日が来るまでは提案しない（まだ取りかかれない）。
+    if (!hasStarted(task)) continue;
+
     const plan = planFor(task, free);
     const days = daysUntil(task.due);
 
