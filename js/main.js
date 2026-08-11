@@ -187,6 +187,11 @@ function renderPick(pick, index) {
     ? `${formatMinutes(plan.minutes)}で片付く`
     : `${formatMinutes(plan.minutes)}で ${plan.units}${unitWord(task)}`;
 
+  // タイマーを使わず、この場でこなしたぶんを記録するボタン。
+  const doneLabel = task.unitType === 'task'
+    ? '完了にする'
+    : `${plan.units}${unitWord(task)}やった`;
+
   const badge = dueBadge(task);
   el.innerHTML = `
     <div class="pick__rank">${index + 1}</div>
@@ -202,11 +207,23 @@ function renderPick(pick, index) {
     </div>
     <div class="pick__actions">
       <button class="btn btn--primary" data-start>始める（${plan.minutes}分）</button>
+      <button class="btn" data-done>${doneLabel}</button>
       <button class="btn btn--ghost" data-edit>詳細</button>
     </div>`;
 
   $('[data-start]', el).addEventListener('click', () => startTimer(task, plan));
   $('[data-edit]', el).addEventListener('click', () => openTaskDialog(task.id));
+  $('[data-done]', el).addEventListener('click', () => {
+    if (task.unitType === 'task') {
+      store.toggleDone(task.id);
+      toast(`「${task.title}」を完了にしました 🎉`);
+    } else {
+      const after = store.logProgress(task.id, plan.units, plan.minutes);
+      toast(after && after.done
+        ? `「${task.title}」を完了にしました 🎉`
+        : `${plan.units}${unitWord(task)}を記録（残り${store.remainingUnits(after)}${unitWord(task)}）`);
+    }
+  });
   return el;
 }
 
@@ -279,6 +296,16 @@ function renderTaskRow(t) {
     ? formatMinutes(store.totalMinutes(t))
     : `${t.doneUnits}/${t.totalUnits}${unitWord(t)}・残り${formatMinutes(rem)}`;
 
+  // ページ・回数のタスクは、1つずつ進められるステッパーを出す（タイマーを使わずに完了できる）。
+  const steppable = t.unitType !== 'task' && !t.done;
+  const stepper = steppable
+    ? `<div class="task__step">
+         <button class="step-btn" data-step="-1" type="button" aria-label="1${unitWord(t)}戻す"${t.doneUnits <= 0 ? ' disabled' : ''}>−</button>
+         <span class="step-count">${t.doneUnits}/${t.totalUnits}${unitWord(t)}</span>
+         <button class="step-btn step-btn--plus" data-step="1" type="button" aria-label="1${unitWord(t)}完了">＋</button>
+       </div>`
+    : '';
+
   el.innerHTML = `
     <button class="task__check" type="button" aria-label="${t.done ? '未完了に戻す' : '完了にする'}">${t.done ? '✓' : ''}</button>
     <button class="task__body" type="button">
@@ -291,13 +318,26 @@ function renderTaskRow(t) {
         <span>${escape(amount)}</span>
       </div>
       <div class="progress"><i style="width:${pct}%"></i></div>
-    </button>`;
+    </button>
+    ${stepper}`;
 
   $('.task__check', el).addEventListener('click', () => {
     store.toggleDone(t.id);
     toast(t.done ? '未完了に戻しました' : `「${t.title}」を完了にしました`);
   });
   $('.task__body', el).addEventListener('click', () => openTaskDialog(t.id));
+
+  el.querySelectorAll('[data-step]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const delta = Number(b.dataset.step);
+      const after = store.stepUnit(t.id, delta);
+      if (delta > 0) {
+        toast(after && after.done
+          ? `「${t.title}」を完了にしました 🎉`
+          : `1${unitWord(t)}完了（残り${store.remainingUnits(after)}${unitWord(t)}）`);
+      }
+    });
+  });
   return el;
 }
 

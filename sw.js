@@ -6,7 +6,7 @@
 // 新しいHTMLと古いCSSのように世代が混ざって表示が壊れる。
 // 更新は VERSION を上げることでのみ起こり、次の起動から一式が入れ替わる。
 
-const VERSION = 'v1.1.2';
+const VERSION = 'v1.2.0';
 const CACHE = `now-todo-${VERSION}`;
 
 const SHELL = [

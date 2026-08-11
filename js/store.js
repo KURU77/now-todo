@@ -282,11 +282,12 @@ export function removeTask(id) {
   persist();
 }
 
-/** 「◯単位ぶん進んだ」を記録する。 */
+/** 「◯単位ぶん進んだ」を記録する。記録後のタスクを返す（完了したかの判定用）。 */
 export function logProgress(id, units, minutes) {
   const t = state.tasks.find((x) => x.id === id);
-  if (!t) return;
+  if (!t) return null;
   const add = Math.max(0, Math.min(remainingUnits(t), Math.round(units)));
+  if (add <= 0) return t;
   state.history.push({
     id: uid(),
     taskId: id,
@@ -297,7 +298,28 @@ export function logProgress(id, units, minutes) {
   });
   // 直近200件だけ持てば十分（振り返り用途）。
   if (state.history.length > 200) state.history = state.history.slice(-200);
-  updateTask(id, { doneUnits: t.doneUnits + add });
+  return updateTask(id, { doneUnits: t.doneUnits + add });
+}
+
+/**
+ * ページ・回数を1単位だけ進める／戻す。一覧のステッパー用。
+ * delta>0 は「1ページ終えた」として履歴に残し、delta<0 は打ち間違いの取り消し（履歴に残さない）。
+ * 戻り値は更新後のタスク。
+ */
+export function stepUnit(id, delta) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (!t) return null;
+  if (delta > 0) return logProgress(id, 1, t.minutesPerUnit);
+  // 取り消し: doneUnits を1減らし、完了していたら未完了に戻す。
+  const next = Math.max(0, t.doneUnits - 1);
+  t.doneUnits = next;
+  if (t.done && next < t.totalUnits) {
+    t.done = false;
+    t.completedAt = null;
+  }
+  t.updatedAt = new Date().toISOString();
+  persist();
+  return t;
 }
 
 // ---- 空き時間 ----
