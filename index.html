@@ -157,6 +157,28 @@
     </div>
 
     <div class="card">
+      <h2 class="card__title">締切の通知</h2>
+      <p class="prose">
+        締切が近づいたら知らせます。<strong>アプリ版では締切の前に自動で通知</strong>します。
+        ブラウザでは、閉じている間は通知できないため、次にアプリを開いたときに過ぎた締切をまとめてお知らせします。
+      </p>
+      <label class="switch switch--block">
+        <input type="checkbox" id="notify-enabled">
+        <span>締切を通知する</span>
+      </label>
+      <label class="field field--inline">
+        <span>知らせる時刻</span>
+        <input type="time" id="notify-time" step="300" value="09:00">
+      </label>
+      <label class="switch switch--block">
+        <input type="checkbox" id="notify-daybefore">
+        <span>前日にも知らせる</span>
+      </label>
+      <button class="btn" id="notify-permission" type="button" hidden>通知を許可する</button>
+      <p class="card__hint" id="notify-status"></p>
+    </div>
+
+    <div class="card">
       <h2 class="card__title">バックアップ</h2>
       <div class="row">
         <button class="btn" id="btn-export" type="button">ファイルに書き出す</button>

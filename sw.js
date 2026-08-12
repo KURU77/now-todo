@@ -6,7 +6,7 @@
 // 新しいHTMLと古いCSSのように世代が混ざって表示が壊れる。
 // 更新は VERSION を上げることでのみ起こり、次の起動から一式が入れ替わる。
 
-const VERSION = 'v1.3.0';
+const VERSION = 'v1.4.0';
 const CACHE = `now-todo-${VERSION}`;
 
 const SHELL = [
@@ -19,6 +19,7 @@ const SHELL = [
   './js/suggest.js',
   './js/scheduler.js',
   './js/ai.js',
+  './js/notify.js',
   './js/calendar.js',
   './icons/icon.svg',
   './icons/icon-192.png',

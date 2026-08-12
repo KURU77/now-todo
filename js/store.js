@@ -48,6 +48,12 @@ const emptyState = () => ({
     useAI: false,
     provider: 'gemini',                     // 'gemini' | 'anthropic'
     keys: { gemini: '', anthropic: '' },    // APIキーは提供元ごとに別々に持つ
+    notify: {
+      enabled: false,
+      time: '09:00',       // 締切当日の何時に知らせるか
+      dayBefore: false,    // 前日にも知らせるか
+      lastCheck: null,     // Web版で「開いたときに知らせる」ための最終確認時刻
+    },
   },
 });
 
@@ -55,6 +61,7 @@ const emptyState = () => ({
 function migrateSettings(base, old) {
   const s = { ...base, ...(old || {}) };
   s.keys = { ...base.keys, ...(s.keys || {}) };
+  s.notify = { ...base.notify, ...(s.notify || {}) };
   // v2 までは Anthropic だけを apiKey に入れていた。あれば anthropic 側へ。
   if (old && typeof old.apiKey === 'string' && old.apiKey && !s.keys.anthropic) {
     s.keys.anthropic = old.apiKey;
@@ -175,6 +182,13 @@ export function fromISO(s) {
 export function daysUntil(iso, from = todayISO()) {
   const ms = fromISO(iso) - fromISO(from);
   return Math.round(ms / 86400000);
+}
+
+/** ISO日付に日数を足す。 */
+export function addDaysISO(iso, n) {
+  const d = fromISO(iso);
+  d.setDate(d.getDate() + n);
+  return toISO(d);
 }
 
 // ---- 時刻ユーティリティ（"HH:MM" ⇔ 0時からの分数） ----
@@ -445,6 +459,11 @@ export function setApiKey(provider, key) {
 
 export function apiKeyFor(provider) {
   return (state.settings.keys?.[provider] || '').trim();
+}
+
+export function setNotify(patch) {
+  state.settings.notify = { ...state.settings.notify, ...patch };
+  persist();
 }
 
 // ---- バックアップ ----

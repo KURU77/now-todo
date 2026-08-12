@@ -6,6 +6,7 @@ import { MOODS, suggest, planFor, headline } from './suggest.js';
 import { renderCalendar, monthLabel, dayLabel, formatMinutes } from './calendar.js';
 import { buildPlan, summarize, candidates } from './scheduler.js';
 import { planOrder, aiEnabled, hasApiKey, PROVIDERS, currentProvider } from './ai.js';
+import * as notify from './notify.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -881,6 +882,8 @@ function renderSettings() {
   $('#provider-note').textContent = meta.note;
   $('#link-key').href = meta.keyUrl;
 
+  renderNotify();
+
   const s = store.getState();
   const active = s.tasks.filter((t) => !t.done);
   const soon = active.filter((t) => store.daysUntil(t.due) <= 7).length;
@@ -976,6 +979,37 @@ async function testAI() {
     status.textContent = `❌ ${e.message}`;
   }
   btn.disabled = false;
+}
+
+function renderNotify() {
+  const n = store.getSettings().notify;
+  $('#notify-enabled').checked = !!n.enabled;
+  if ($('#notify-time') !== document.activeElement) $('#notify-time').value = n.time || '09:00';
+  $('#notify-daybefore').checked = !!n.dayBefore;
+  updateNotifyStatus();
+}
+
+async function updateNotifyStatus() {
+  const status = $('#notify-status');
+  const btn = $('#notify-permission');
+  const m = notify.mode();
+  btn.hidden = true;
+  if (m === 'none') { status.textContent = 'この端末では通知を使えません。'; return; }
+  if (!store.getSettings().notify.enabled) {
+    status.textContent = m === 'web' ? '※ ブラウザでは、アプリを開いたときにお知らせします。' : '';
+    return;
+  }
+  const perm = await notify.checkPermission();
+  if (perm === 'granted') {
+    status.textContent = m === 'native'
+      ? '✅ 締切の前に自動で通知します。'
+      : '✅ アプリを開いたときに、過ぎた締切をお知らせします。';
+  } else if (perm === 'denied') {
+    status.textContent = '通知が拒否されています。端末やブラウザの設定から許可してください。';
+  } else {
+    status.textContent = '通知の許可が必要です。';
+    btn.hidden = false;
+  }
 }
 
 // ---------------------------------------------------------------- 起動
@@ -1109,6 +1143,39 @@ function bind() {
     store.clearAll();
     toast('すべて削除しました');
   });
+
+  // --- 締切の通知
+  $('#notify-enabled').addEventListener('change', async (e) => {
+    if (e.target.checked) {
+      const ok = await notify.requestPermission();
+      if (!ok) {
+        e.target.checked = false;
+        await updateNotifyStatus();
+        toast('通知が許可されませんでした');
+        return;
+      }
+      // Web版で過去の締切を一気に鳴らさないよう、確認時刻を今にする。
+      store.setNotify({ enabled: true, lastCheck: new Date().toISOString() });
+      toast('締切を通知します');
+    } else {
+      store.setNotify({ enabled: false });
+    }
+    await notify.syncSchedule();
+    await updateNotifyStatus();
+  });
+  $('#notify-time').addEventListener('change', async (e) => {
+    store.setNotify({ time: e.target.value || '09:00' });
+    await notify.syncSchedule();
+  });
+  $('#notify-daybefore').addEventListener('change', async (e) => {
+    store.setNotify({ dayBefore: e.target.checked });
+    await notify.syncSchedule();
+  });
+  $('#notify-permission').addEventListener('click', async () => {
+    await notify.requestPermission();
+    await notify.syncSchedule();
+    await updateNotifyStatus();
+  });
 }
 
 function renderAll() {
@@ -1132,6 +1199,19 @@ function boot() {
   $('#s-date').value = store.todayISO();
   $('#s-date').min = store.todayISO();
   store.subscribe(renderAll);
+
+  // 締切の通知。
+  // ・アプリ版: タスクや設定が変わるたびにOSの予約を組み直す（少しまとめてから）。
+  // ・Web版: 起動時と、画面が戻ってきたときに「過ぎた締切」をお知らせする。
+  let schedTimer;
+  store.subscribe(() => {
+    clearTimeout(schedTimer);
+    schedTimer = setTimeout(() => notify.syncSchedule(), 400);
+  });
+  notify.syncSchedule();
+  notify.catchUp();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) notify.catchUp(); });
+  window.addEventListener('focus', () => notify.catchUp());
 
   const hash = location.hash.replace('#', '');
   setView(['now', 'tasks', 'calendar', 'plan', 'settings'].includes(hash) ? hash : 'now');
