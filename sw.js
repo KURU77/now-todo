@@ -6,10 +6,12 @@
 // 新しいHTMLと古いCSSのように世代が混ざって表示が壊れる。
 // 更新は VERSION を上げることでのみ起こり、次の起動から一式が入れ替わる。
 
-const VERSION = 'v1.4.0';
+const VERSION = 'v1.5.0';
 const CACHE = `now-todo-${VERSION}`;
 
-const SHELL = [
+// これが無いとオフラインで起動できない。1つでも欠けたらインストールを失敗させる。
+// （中途半端に入って「オフラインだと白い画面」になるより、失敗させて次回やり直すほうがよい）
+const CORE = [
   './',
   './index.html',
   './styles.css',
@@ -21,17 +23,27 @@ const SHELL = [
   './js/ai.js',
   './js/notify.js',
   './js/calendar.js',
+];
+
+// 無くても起動はできるもの（アイコン類）。失敗しても止めない。
+const EXTRA = [
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon-180.png',
+  './icons/icon-maskable-512.png',
 ];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE)
-      // 1つでも失敗すると全部入らないので、個別に入れて失敗は握りつぶす。
-      .then((c) => Promise.allSettled(SHELL.map((url) => c.add(url))))
-      .then(() => self.skipWaiting()),
+    (async () => {
+      const cache = await caches.open(CACHE);
+      // 本体は addAll。1つでもコケたら例外が飛び、インストールは失敗する（＝古い版が残る）。
+      await cache.addAll(CORE);
+      // アイコンは個別に。落ちても本体の動作には関係ない。
+      await Promise.allSettled(EXTRA.map((url) => cache.add(url)));
+      await self.skipWaiting();
+    })(),
   );
 });
 

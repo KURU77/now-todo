@@ -72,6 +72,8 @@ export async function planOrder({ tasks, slots, signal }) {
   const provider = currentProvider();
   const apiKey = apiKeyFor(provider);
   if (!apiKey) throw new Error('APIキーが設定されていません');
+  // オフラインならAIには聞けない。呼ぶ前にはっきり伝える（締切順の割り当ては動く）。
+  if (!navigator.onLine) throw new Error('オフラインのためAIに相談できません');
 
   const payload = {
     today: new Date().toISOString().slice(0, 10),
@@ -109,7 +111,7 @@ async function callGemini(apiKey, userText, signal) {
   const model = PROVIDERS.gemini.model;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-  const res = await fetch(url, {
+  const res = await send(url, {
     method: 'POST',
     signal,
     headers: {
@@ -159,7 +161,7 @@ const ANTHROPIC_SCHEMA = {
 };
 
 async function callAnthropic(apiKey, userText, signal) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await send('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     signal,
     headers: {
@@ -192,6 +194,18 @@ async function callAnthropic(apiKey, userText, signal) {
   const parsed = safeParse(text);
   parsed.usage = data.usage;
   return parsed;
+}
+
+/** fetch が例外を投げるのは通信そのものが届かないとき。日本語にして返す。 */
+async function send(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    throw new Error(navigator.onLine
+      ? 'AIに接続できませんでした。通信状況を確認してください。'
+      : 'オフラインのためAIに相談できません');
+  }
 }
 
 // ---------------------------------------------------------------- 共通

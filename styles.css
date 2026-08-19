@@ -77,6 +77,19 @@ h1, h2, h3 { margin: 0; line-height: 1.35; }
 .appbar__title { font-size: 18px; font-weight: 800; letter-spacing: .02em; }
 .appbar__title span { font-weight: 600; color: var(--dim); font-size: 15px; }
 
+/* ネットにつながっていないときだけ出る印。オフラインでも普通に使えることを示す。 */
+.offline-badge {
+  margin-left: auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .appbar__add {
   margin-left: auto;
   width: 38px;
@@ -596,6 +609,19 @@ body.is-timeup .timer__clock { animation: pulse 1s ease-in-out infinite; }
   box-shadow: var(--shadow);
   animation: rise .18s ease-out;
 }
+.toast__btn {
+  margin-left: 4px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 8px); } }
 
 @media (prefers-reduced-motion: reduce) {

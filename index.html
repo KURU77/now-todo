@@ -18,6 +18,7 @@
 
 <header class="appbar">
   <h1 class="appbar__title">今！<span>やることリスト</span></h1>
+  <span class="offline-badge" id="offline-badge" hidden role="status">オフライン</span>
   <button class="appbar__add" id="btn-add" type="button" aria-label="タスクを追加">＋</button>
 </header>
 
@@ -117,6 +118,11 @@
         入力したタスクは<strong>この端末のブラウザの中だけ</strong>に保存されます。
         サーバーには何も送信していないので、他の人に見られることはありません。
         その代わり、ブラウザのデータを消すとタスクも消えます。大事なものは下からバックアップしてください。
+      </p>
+      <p class="prose">
+        <strong>ネットにつながっていなくても、そのまま使えます。</strong>
+        一度開いたあとは、機内モードや圏外でも起動でき、登録・提案・割り当て・タイマーはすべて動きます。
+        つながっていないときは上に「オフライン」と出ます（AIへの相談だけは通信が必要です）。
       </p>
     </div>
 

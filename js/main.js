@@ -1193,12 +1193,41 @@ function renderAll() {
   }
 }
 
+/** ネットにつながっていないときだけ、上部に「オフライン」と出す。 */
+function updateOfflineBadge() {
+  $('#offline-badge').hidden = navigator.onLine;
+}
+
+/**
+ * 新しい版が入ったことを知らせる。
+ * キャッシュは版ごと丸ごと切り替わるので、開き直すまでは今の版のまま動き続ける。
+ * 勝手に再読み込みすると入力中のものが消えるので、押してもらう形にする。
+ */
+function announceUpdate() {
+  const el = $('#toast');
+  clearTimeout(toastTimer);   // 前のお知らせのタイマーに消されないように
+  el.innerHTML = '';
+  el.append(document.createTextNode('新しい版があります '));
+  const b = document.createElement('button');
+  b.className = 'toast__btn';
+  b.type = 'button';
+  b.textContent = '今すぐ更新';
+  b.addEventListener('click', () => location.reload());
+  el.append(b);
+  el.hidden = false;   // 自動では消さない（押してもらうため）
+}
+
 function boot() {
   bind();
   store.pruneOldSlots();   // 過ぎた日の空き時間は残しておいても邪魔なだけ
   $('#s-date').value = store.todayISO();
   $('#s-date').min = store.todayISO();
   store.subscribe(renderAll);
+
+  // オフライン表示。ネットが無くても全機能そのまま使えるので、状態だけ静かに知らせる。
+  updateOfflineBadge();
+  window.addEventListener('online', updateOfflineBadge);
+  window.addEventListener('offline', updateOfflineBadge);
 
   // 締切の通知。
   // ・アプリ版: タスクや設定が変わるたびにOSの予約を組み直す（少しまとめてから）。
@@ -1222,6 +1251,11 @@ function boot() {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW登録に失敗', e));
     });
+    // 既にこの版で動いている最中に新しい版が有効化されたら、開き直しを促す。
+    // 初回インストール（まだ制御者がいない）ときは何も出さない。
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.addEventListener('controllerchange', announceUpdate, { once: true });
+    }
   }
 }
 
